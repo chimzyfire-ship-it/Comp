@@ -58,6 +58,13 @@ companies is not implemented.
   `sources/search_engine_source.py`.
 - Offline parser/filter regression tests and an HTML fixture:
   `tests/test_search_engine_source.py` and `tests/fixtures/bing_results.html`.
+- Local no-key bulk-input foundation: `services/company_import.py` and
+  `scripts/import_companies.py`. It imports a documented CSV schema into
+  SQLite, normalizes and deduplicates company/location keys, records invalid
+  input rows, creates per-run checkpoints, commits bounded batches, and exports
+  a prior run without any network request.
+- CSV schema documentation and import regression tests:
+  `docs/COMPANY_INPUT_SCHEMA.md` and `tests/test_company_import.py`.
 - Startup entry point: `main.py`.
 
 Placeholder package directories exist for future database, exporter, scraper,
@@ -67,10 +74,10 @@ source, and utility work under `app/`; no implementations were found there.
 
 | Stage | Current behavior |
 | --- | --- |
-| Inputs | Four fixed public-search queries. No API key, company upload, or import exists. |
+| Inputs | Four fixed public-search queries, or a UTF-8 CSV with required `company_name` and optional `location`/`website` columns. The exact CSV contract is in `docs/COMPANY_INPUT_SCHEMA.md`. |
 | Discovery/enrichment | Parses public Bing/DuckDuckGo HTML result pages, normalizes destination domains, and retains only titles with defined company and oil-and-gas relevance signals. |
-| Output | Shows company name, website, location, and the originating search provider in the in-memory Qt table. When no credible result is available, the GUI reports that failure instead of displaying sample data. |
-| Storage | No database, cache, checkpoint, or export code is implemented. `data/`, `exports/`, and `logs/` are empty, ignored output directories retained with `.gitkeep` files. |
+| Output | Shows company name, website, location, and the originating search provider in the in-memory Qt table. The importer exports a run's canonical company records and checkpoint states as CSV. When no credible live result is available, the GUI reports that failure instead of displaying sample data. |
+| Storage | The importer creates a local SQLite database (default `data/company_runs.sqlite3`) with import runs, canonical companies, per-run checkpoints, and invalid-row diagnostics. The database and CSV exports remain ignored generated output. |
 
 ## Run locally
 
@@ -100,6 +107,20 @@ Run offline regression tests with:
 python -m unittest discover -s tests
 ```
 
+Import a no-key company CSV and export its stored run:
+
+```bash
+python scripts/import_companies.py import path/to/companies.csv --export exports/companies.csv
+```
+
+The command prints a `run_id`. Use it to inspect or re-export a checkpointed
+run:
+
+```bash
+python scripts/import_companies.py status RUN_ID
+python scripts/import_companies.py export RUN_ID exports/companies.csv
+```
+
 ## Current limitations and free-source constraints
 
 - General-search HTML is an unstable, unofficial integration surface. Markup,
@@ -111,9 +132,10 @@ python -m unittest discover -s tests
   prove that a result is an official website.
 - The product does not validate DNS, redirects, TLS, ownership, or company-to-
   domain matches. It can emit false positives and blank websites.
-- Searches run in one worker and results exist only in memory.
-  Closing the application loses them. There is no CSV export despite the
-  `exports/` directory.
+- The GUI search remains a small, one-worker interactive flow; it does not yet
+  use the local importer, accept a company file, or persist live-search
+  findings. The importer itself stores only supplied websites and pending
+  discovery checkpoints; it does not prove ownership or discover new domains.
 - There are no automated tests, lint/type-check configuration, CI workflow,
   lockfile, container configuration, or application logging implementation.
 
@@ -166,14 +188,19 @@ those services explicitly permit.
    company-like terms.
 3. There is no test coverage yet for engine error aggregation, network retries,
    deduplication, or GUI thread behavior.
-4. Users cannot choose sources or query parameters, and there is no company
-   input workflow, caching, checkpointing, persistence, or export.
+4. The local importer does not yet have a permitted no-key resolver that can
+   process its `pending_discovery` checkpoints. It is intentionally offline;
+   adding bulk general-search scraping would violate the project's responsible
+   source strategy.
+5. Users cannot yet choose sources or query parameters, import a company file
+   through the GUI, or view prior SQLite runs in the desktop application.
 
 Recommended next implementation priority: select one permitted, reproducible,
-no-key company dataset and define its input schema. Then build a small,
-test-covered local batch runner with SQLite checkpointing and CSV export;
-defer 500,000-company execution until its measured rate limits and data terms
-support it.
+no-key company dataset and use the implemented CSV/SQLite import path for a
+small pilot. Then add one compliant resolver for pending checkpoints, with
+explicit source terms, rate limits, retries, and evidence capture; defer
+500,000-company execution until its measured rate limits and data terms support
+it.
 
 ## Changelog
 
@@ -194,3 +221,7 @@ support it.
 - Added offline regression coverage for Bing parsing, relevance filtering, and
   DuckDuckGo fallback. A live smoke test confirmed that unrelated educational
   results are now rejected.
+- Added the local CSV-to-SQLite import/export foundation, including normalized
+  deduplication, per-run checkpoints, bounded commits, invalid-row diagnostics,
+  documented input schema, and regression coverage. It makes no network
+  requests and requires no API key.
