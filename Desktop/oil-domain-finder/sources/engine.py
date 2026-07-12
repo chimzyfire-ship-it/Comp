@@ -8,31 +8,35 @@ from sources import __path__ as SOURCES_PATH
 from sources.base import BaseSource, ProgressCallback, SearchResult
 
 
+class SearchEngineError(RuntimeError):
+    """Raised when no live source can return verified company websites."""
+
+
 class SearchEngine:
     """Run available sources, merge their results, and remove duplicates."""
 
     def search(self, progress_callback: ProgressCallback | None = None) -> list[SearchResult]:
-        """Search all available live sources, or use the built-in sample fallback."""
+        """Search all available live sources and report an honest failure if none work."""
         self._report(progress_callback, "Searching...", 10)
-        sources = self._enabled_sources()
-        live_sources = [source for source in sources if source.is_live]
-        selected_sources = live_sources or [source for source in sources if not source.is_live]
+        sources = [source for source in self._enabled_sources() if source.is_live]
+        if not sources:
+            raise SearchEngineError("No live, no-key search source is available.")
 
         results: list[SearchResult] = []
-        for index, source in enumerate(selected_sources, start=1):
+        failures: list[str] = []
+        for index, source in enumerate(sources, start=1):
             try:
                 results.extend(source.search(progress_callback))
-            except Exception:
-                # A temporarily unavailable source should not stop a simple search.
+            except Exception as error:
+                failures.append(str(error) or source.__class__.__name__)
                 continue
             results = self._merge_duplicates(results)
-            self._report(progress_callback, f"Found {len(results)} companies", 10 + 70 * index // max(1, len(selected_sources)))
-
-        # Keep the app useful if live sources are temporarily unavailable.
-        if not results and live_sources:
-            results = self._run_demo_fallback(sources)
+            self._report(progress_callback, f"Found {len(results)} companies", 10 + 70 * index // max(1, len(sources)))
 
         merged = self._merge_duplicates(results)
+        if not merged:
+            detail = failures[0] if failures else "No relevant company websites were found."
+            raise SearchEngineError(detail)
         self._report(progress_callback, f"Found {len(merged)} companies", 90)
         self._report(progress_callback, "Search Complete", 100)
         return merged
@@ -43,15 +47,8 @@ class SearchEngine:
         for module in pkgutil.iter_modules(SOURCES_PATH):
             if not module.name.startswith("_") and module.name not in {"base", "engine"}:
                 importlib.import_module(f"sources.{module.name}")
-        return [source() for source in BaseSource.__subclasses__() if source().is_enabled]
-
-    @staticmethod
-    def _run_demo_fallback(sources: list[BaseSource]) -> list[SearchResult]:
-        """Use a non-live source when no live result could be retrieved."""
-        for source in sources:
-            if not source.is_live:
-                return source.search()
-        return []
+        instances = [source() for source in BaseSource.__subclasses__()]
+        return [source for source in instances if source.is_enabled]
 
     @staticmethod
     def _merge_duplicates(results: list[SearchResult]) -> list[SearchResult]:
@@ -67,6 +64,7 @@ class SearchEngine:
                 company_name=existing.company_name,
                 website=existing.website or result.website,
                 location=existing.location,
+                source=existing.source or result.source,
                 registry_url=existing.registry_url or result.registry_url,
             )
         return list(merged.values())

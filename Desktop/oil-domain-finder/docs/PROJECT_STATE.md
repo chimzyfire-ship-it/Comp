@@ -46,15 +46,18 @@ companies is not implemented.
   `sources/demo_source.py`.
 - Public web-search source: `sources/search_engine_source.py`. It makes four
   fixed industry queries, tries Bing HTML results first and DuckDuckGo HTML
-  results second, filters common non-company/editorial domains and title terms,
-  derives a company name from result titles, and retains at most eight results
-  per query.
-- Legacy OpenCorporates adapter: `sources/opencorporates_source.py` and
-  `services/opencorporates.py`. It activates only when
-  `OPENCORPORATES_API_TOKEN` is set, queries five fixed keywords, requests up
-  to 20 results per keyword by default, and accepts a website only when the API
-  explicitly supplies its `website` field. It conflicts with the no-API-key
-  product constraint and should be removed or replaced before release.
+  results second, and uses DuckDuckGo when Bing produces no credible result.
+  It filters common non-company/editorial domains, educational titles, and
+  titles without both industry and company-like signals. It derives a company
+  name from result titles and retains at most eight results per query.
+- The token-gated OpenCorporates integration and sample-data source were
+  removed to uphold the no-API-key constraint and prevent demo data from being
+  shown as a successful live search.
+- Every result now carries its source name and displays it in the GUI Source
+  column: `sources/base.py`, `sources/engine.py`, and
+  `sources/search_engine_source.py`.
+- Offline parser/filter regression tests and an HTML fixture:
+  `tests/test_search_engine_source.py` and `tests/fixtures/bing_results.html`.
 - Startup entry point: `main.py`.
 
 Placeholder package directories exist for future database, exporter, scraper,
@@ -64,9 +67,9 @@ source, and utility work under `app/`; no implementations were found there.
 
 | Stage | Current behavior |
 | --- | --- |
-| Inputs | Four fixed public-search queries. A legacy OpenCorporates path also accepts fixed keyword queries and a token, but it is incompatible with the product constraint. No company upload/import exists. |
-| Discovery/enrichment | Parses public Bing/DuckDuckGo HTML result pages and normalizes their destination domains; optionally normalizes OpenCorporates company records. |
-| Output | Shows company name, website, location, and a blank Source column in the in-memory Qt table. `SearchResult.table_values()` deliberately returns a blank source value. |
+| Inputs | Four fixed public-search queries. No API key, company upload, or import exists. |
+| Discovery/enrichment | Parses public Bing/DuckDuckGo HTML result pages, normalizes destination domains, and retains only titles with defined company and oil-and-gas relevance signals. |
+| Output | Shows company name, website, location, and the originating search provider in the in-memory Qt table. When no credible result is available, the GUI reports that failure instead of displaying sample data. |
 | Storage | No database, cache, checkpoint, or export code is implemented. `data/`, `exports/`, and `logs/` are empty, ignored output directories retained with `.gitkeep` files. |
 
 ## Run locally
@@ -82,15 +85,19 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The current public-search source needs no API key. A legacy OpenCorporates path
-can be enabled with `OPENCORPORATES_API_TOKEN`, but this contradicts the
-product constraint and is not part of the intended release workflow. If live
-sources return nothing, the engine displays the built-in demo data.
+The current public-search source needs no API key. If it cannot find a credible
+result, the application reports that outcome rather than substituting demo data.
 
 Validate the documentation contract with:
 
 ```bash
 python scripts/check_project_state.py
+```
+
+Run offline regression tests with:
+
+```bash
+python -m unittest discover -s tests
 ```
 
 ## Current limitations and free-source constraints
@@ -102,13 +109,9 @@ python scripts/check_project_state.py
 - The public search source is intentionally tiny (four queries and up to eight
   results per query) and cannot enumerate a supplied company list or reliably
   prove that a result is an official website.
-- OpenCorporates is not a no-credential source in this implementation: the
-  legacy code requires an API token and therefore must not be relied upon for
-  the intended release. It also does not paginate, persist responses, or expose
-  query controls in the GUI.
 - The product does not validate DNS, redirects, TLS, ownership, or company-to-
   domain matches. It can emit false positives and blank websites.
-- Searches are synchronous within one worker and results exist only in memory.
+- Searches run in one worker and results exist only in memory.
   Closing the application loses them. There is no CSV export despite the
   `exports/` directory.
 - There are no automated tests, lint/type-check configuration, CI workflow,
@@ -153,32 +156,24 @@ those services explicitly permit.
 
 ## Known bugs, risks, and next priorities
 
-1. The legacy OpenCorporates implementation requires an API key
-   (`services/opencorporates.py` and `sources/opencorporates_source.py`), which
-   conflicts with the no-API-key product constraint. Remove it or replace it
-   with an unauthenticated, permitted source before release.
-2. The results table's Source column is always blank (`sources/base.py`), so
-   users cannot see where a row came from.
-3. Source discovery instantiates every source twice in a list comprehension
-   (`sources/engine.py`); this is harmless today but can be wasteful or have
-   side effects as providers grow.
-4. `SearchEngine` suppresses all source exceptions and GUI failure handling
-   discards the failure message, leaving little diagnostic information.
-5. The engine uses every enabled live source and uses demo data only after no
-   live results; a source that returns weak/partial live results prevents the
-   demo fallback, and users cannot choose sources or query parameters.
-6. HTML parsers and Bing redirect decoding are brittle against upstream
+1. HTML parsers and Bing redirect decoding are brittle against upstream
    changes. Query-result title parsing is not authoritative company identity
-   resolution.
-7. There is no test coverage for parsing, filtering, deduplication, error
-   handling, or GUI thread behavior.
+   resolution. A live verification on 2026-07-12 found that Bing initially
+   returned unrelated educational pages; the source now rejects them, but may
+   correctly return no results until a more suitable permitted source exists.
+2. The relevance rules are intentionally conservative and can reject legitimate
+   companies whose search-result title lacks the configured industry or
+   company-like terms.
+3. There is no test coverage yet for engine error aggregation, network retries,
+   deduplication, or GUI thread behavior.
+4. Users cannot choose sources or query parameters, and there is no company
+   input workflow, caching, checkpointing, persistence, or export.
 
-Recommended next implementation priority: remove the token-gated source,
-define a documented company-input schema, and build a small, test-covered local
-batch runner with SQLite checkpointing and CSV export. Begin with a permitted,
-reproducible no-key dataset and one compliant no-key source; defer
-500,000-company execution until its measured rate limits and data terms support
-it.
+Recommended next implementation priority: select one permitted, reproducible,
+no-key company dataset and define its input schema. Then build a small,
+test-covered local batch runner with SQLite checkpointing and CSV export;
+defer 500,000-company execution until its measured rate limits and data terms
+support it.
 
 ## Changelog
 
@@ -194,3 +189,8 @@ it.
   OpenCorporates integration as incompatible with the intended release.
 - Configured the project for publication to
   `https://github.com/chimzyfire-ship-it/Comp`.
+- Removed the API-key and demo-data paths; results now show their source and
+  report failed/no-credible searches instead of masquerading as success.
+- Added offline regression coverage for Bing parsing, relevance filtering, and
+  DuckDuckGo fallback. A live smoke test confirmed that unrelated educational
+  results are now rejected.

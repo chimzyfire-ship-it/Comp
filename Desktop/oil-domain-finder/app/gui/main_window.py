@@ -31,8 +31,8 @@ class SearchWorker(QObject):
     def run(self) -> None:
         try:
             companies = SearchEngine().search(progress_callback=self.progress.emit)
-        except Exception:
-            self.failed.emit("We couldn't complete the search. Please try again.")
+        except Exception as error:
+            self.failed.emit(str(error) or "We couldn't complete the search. Please try again.")
         else:
             self.finished.emit(companies)
 
@@ -137,7 +137,7 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _search_failed(self, message: str) -> None:
-        self.status_label.setText("Search Complete")
+        self.status_label.setText(message)
         self.progress_bar.setValue(0)
         self.start_button.setEnabled(True)
 

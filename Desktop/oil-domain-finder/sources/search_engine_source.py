@@ -67,6 +67,49 @@ IGNORED_TITLE_TERMS = (
     "today",
     "investment",
 )
+INDUSTRY_TITLE_TERMS = (
+    "oil",
+    "gas",
+    "petroleum",
+    "energy",
+    "drilling",
+    "exploration",
+    "pipeline",
+    "offshore",
+    "lng",
+    "lpg",
+)
+COMPANY_TITLE_TERMS = (
+    "company",
+    "group",
+    "ltd",
+    "llc",
+    "inc",
+    "corp",
+    "corporation",
+    "limited",
+    "services",
+    "solutions",
+    "enterprises",
+    "holdings",
+    "international",
+    "official site",
+    "home",
+    "about us",
+)
+EDUCATIONAL_TITLE_TERMS = (
+    "what is",
+    "introduction",
+    "definition",
+    "process",
+    "types",
+    "skills",
+    "training",
+    "course",
+    "guide",
+    "explained",
+    "learn",
+)
 
 
 class SearchUnavailableError(RuntimeError):
@@ -155,17 +198,35 @@ class SearchEngineSource(BaseSource):
     def search(self, progress_callback: ProgressCallback | None = None) -> list[SearchResult]:
         """Search public web results and return unique company websites."""
         results: list[SearchResult] = []
+        failures: list[str] = []
         for index, query in enumerate(SEARCH_QUERIES, start=1):
             self._report(progress_callback, "Searching...", 10 + index * 70 // len(SEARCH_QUERIES))
-            results.extend(self._search_query(query))
-        return self._deduplicate(results)
+            try:
+                results.extend(self._search_query(query))
+            except SearchUnavailableError as error:
+                failures.append(str(error))
+        unique_results = self._deduplicate(results)
+        if not unique_results and failures:
+            raise SearchUnavailableError(failures[0])
+        return unique_results
 
     def _search_query(self, query: str) -> list[SearchResult]:
-        """Search a public result page, trying an alternate page if needed."""
-        result_links = self._bing_results(query)
-        if not result_links:
-            result_links = self._duckduckgo_results(query)
-        return self._company_results(result_links)
+        """Use the first search provider that yields credible company websites."""
+        failures: list[SearchUnavailableError] = []
+        for source_name, fetch_results in (
+            ("Bing", self._bing_results),
+            ("DuckDuckGo", self._duckduckgo_results),
+        ):
+            try:
+                companies = self._company_results(fetch_results(query), source_name)
+            except SearchUnavailableError as error:
+                failures.append(error)
+                continue
+            if companies:
+                return companies
+        if len(failures) == 2:
+            raise SearchUnavailableError("Public search is unavailable from Bing and DuckDuckGo.") from failures[-1]
+        return []
 
     def _bing_results(self, query: str) -> list[tuple[str, str]]:
         page = self._download(f"{BING_SEARCH_URL}{urlencode({'q': query})}")
@@ -190,13 +251,13 @@ class SearchEngineSource(BaseSource):
         except (URLError, TimeoutError, OSError) as error:
             raise SearchUnavailableError("Public search is unavailable.") from error
 
-    def _company_results(self, result_links: list[tuple[str, str]]) -> list[SearchResult]:
+    def _company_results(self, result_links: list[tuple[str, str]], source_name: str) -> list[SearchResult]:
         companies: list[SearchResult] = []
         for title, link in result_links:
             website = self._official_website(link)
             company_name = self._company_name(title)
-            if website and company_name and not self._is_non_company_title(title):
-                companies.append(SearchResult(company_name, website, ""))
+            if website and company_name and self._is_relevant_company_title(title):
+                companies.append(SearchResult(company_name, website, "", source_name))
             if len(companies) >= self.max_results_per_query:
                 break
         return companies
@@ -243,10 +304,15 @@ class SearchEngineSource(BaseSource):
         return " ".join(name.split())[:120]
 
     @staticmethod
-    def _is_non_company_title(title: str) -> bool:
-        """Exclude common market and editorial result titles."""
+    def _is_relevant_company_title(title: str) -> bool:
+        """Keep company-like industry titles; reject editorial and educational pages."""
         normalized = title.casefold()
-        return any(term in normalized for term in IGNORED_TITLE_TERMS)
+        return (
+            not any(term in normalized for term in IGNORED_TITLE_TERMS)
+            and not any(term in normalized for term in EDUCATIONAL_TITLE_TERMS)
+            and any(term in normalized for term in INDUSTRY_TITLE_TERMS)
+            and any(term in normalized for term in COMPANY_TITLE_TERMS)
+        )
 
     @staticmethod
     def _deduplicate(results: list[SearchResult]) -> list[SearchResult]:

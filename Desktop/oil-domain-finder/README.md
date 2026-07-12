@@ -1,6 +1,7 @@
 # Oil Domain Finder
 
-A desktop MVP for collecting publicly available oil and gas company websites.
+A desktop MVP for collecting publicly available oil and gas company websites,
+without API keys.
 
 Current implementation details, constraints, and the required documentation
 workflow are maintained in [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md).
@@ -31,6 +32,12 @@ Install dependencies and launch:
 ```bash
 pip install -r requirements.txt
 python main.py
+```
+
+Run the offline regression tests:
+
+```bash
+python -m unittest discover -s tests
 ```
 
 ## Validate project documentation

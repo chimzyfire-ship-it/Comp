@@ -17,12 +17,12 @@ class SearchResult:
     company_name: str
     website: str
     location: str
+    source: str
     registry_url: str = ""
 
     def table_values(self) -> tuple[str, str, str, str]:
         """Return values in the order used by the existing results table."""
-        # The table layout is kept intact, but source names remain internal.
-        return (self.company_name, self.website, self.location, "")
+        return (self.company_name, self.website, self.location, self.source)
 
 
 class BaseSource(ABC):
