@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+
+# Generated application output
+exports/*
+logs/*
+data/*
+!exports/.gitkeep
+!logs/.gitkeep
+!data/.gitkeep
