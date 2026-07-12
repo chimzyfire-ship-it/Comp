@@ -1,0 +1,24 @@
+{
+  "head": {"vars": ["company", "companyLabel", "website", "countryLabel"]},
+  "results": {
+    "bindings": [
+      {
+        "company": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1"},
+        "companyLabel": {"type": "literal", "value": "Acme Oil"},
+        "website": {"type": "uri", "value": "https://www.acme-oil.example/about"},
+        "countryLabel": {"type": "literal", "value": "Exampleland"}
+      },
+      {
+        "company": {"type": "uri", "value": "http://www.wikidata.org/entity/Q1"},
+        "companyLabel": {"type": "literal", "value": "Acme Oil"},
+        "website": {"type": "uri", "value": "https://www.acme-oil.example/contact"},
+        "countryLabel": {"type": "literal", "value": "Exampleland"}
+      },
+      {
+        "company": {"type": "uri", "value": "http://www.wikidata.org/entity/Q2"},
+        "companyLabel": {"type": "literal", "value": "Missing Website"},
+        "website": {"type": "literal", "value": "not a url"}
+      }
+    ]
+  }
+}

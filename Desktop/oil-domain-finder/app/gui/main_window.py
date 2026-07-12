@@ -60,7 +60,7 @@ class MainWindow(QMainWindow):
 
         title = QLabel("Oil Domain Finder")
         title.setObjectName("titleLabel")
-        subtitle = QLabel("Find publicly available oil and gas company websites.")
+        subtitle = QLabel("Find structured oil and gas company websites — no API key required.")
         subtitle.setObjectName("subtitleLabel")
         page_layout.addWidget(title)
         page_layout.addWidget(subtitle)

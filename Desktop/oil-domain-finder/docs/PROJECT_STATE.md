@@ -30,6 +30,9 @@ companies is not implemented.
   rather than an HTTP library.
 - The search worker runs in a Qt `QThread`, keeping the GUI event loop
   responsive while a search runs.
+- The primary live source is Wikidata Query Service, using its structured
+  `official website` property (`P856`) and petroleum-industry hierarchy
+  (`Q862571`), with a descriptive User-Agent and one bounded query per search.
 
 ## Implemented functionality
 
@@ -44,20 +47,21 @@ companies is not implemented.
   website.
 - Built-in demo fallback with ten well-known companies:
   `sources/demo_source.py`.
-- Public web-search source: `sources/search_engine_source.py`. It makes four
-  fixed industry queries, tries Bing HTML results first and DuckDuckGo HTML
-  results second, and uses DuckDuckGo when Bing produces no credible result.
-  It filters common non-company/editorial domains, educational titles, and
-  titles without both industry and company-like signals. It derives a company
-  name from result titles and retains at most eight results per query.
-- The token-gated OpenCorporates integration and sample-data source were
-  removed to uphold the no-API-key constraint and prevent demo data from being
-  shown as a successful live search.
+- Structured no-key discovery source: `sources/wikidata_source.py`. It issues
+  one bounded Wikidata SPARQL query for petroleum-industry entities that have
+  an official website, normalizes the website origin, deduplicates records, and
+  retains Wikidata entity provenance. A live end-to-end check on 2026-07-12
+  returned 210 records.
+- The token-gated OpenCorporates integration, sample-data source, and fragile
+  Bing/DuckDuckGo HTML scraper were removed to uphold the no-API-key constraint
+  and prevent misleading or unstructured results from being presented as
+  successful discovery.
 - Every result now carries its source name and displays it in the GUI Source
   column: `sources/base.py`, `sources/engine.py`, and
   `sources/search_engine_source.py`.
-- Offline parser/filter regression tests and an HTML fixture:
-  `tests/test_search_engine_source.py` and `tests/fixtures/bing_results.html`.
+- Offline structured-source regression tests and JSON fixture:
+  `tests/test_wikidata_source.py` and
+  `tests/fixtures/wikidata_oil_companies.json`.
 - Local no-key bulk-input foundation: `services/company_import.py` and
   `scripts/import_companies.py`. It imports a documented CSV schema into
   SQLite, normalizes and deduplicates company/location keys, records invalid
@@ -65,6 +69,9 @@ companies is not implemented.
   a prior run without any network request.
 - CSV schema documentation and import regression tests:
   `docs/COMPANY_INPUT_SCHEMA.md` and `tests/test_company_import.py`.
+- Windows packaging support: `scripts/build_windows.bat` and
+  `.github/workflows/build-windows.yml`. The GitHub workflow produces a
+  downloadable `OilDomainFinder-Windows` artifact containing the executable.
 - Startup entry point: `main.py`.
 
 Placeholder package directories exist for future database, exporter, scraper,
@@ -74,9 +81,9 @@ source, and utility work under `app/`; no implementations were found there.
 
 | Stage | Current behavior |
 | --- | --- |
-| Inputs | Four fixed public-search queries, or a UTF-8 CSV with required `company_name` and optional `location`/`website` columns. The exact CSV contract is in `docs/COMPANY_INPUT_SCHEMA.md`. |
-| Discovery/enrichment | Parses public Bing/DuckDuckGo HTML result pages, normalizes destination domains, and retains only titles with defined company and oil-and-gas relevance signals. |
-| Output | Shows company name, website, location, and the originating search provider in the in-memory Qt table. The importer exports a run's canonical company records and checkpoint states as CSV. When no credible live result is available, the GUI reports that failure instead of displaying sample data. |
+| Inputs | One fixed, structured Wikidata query, or a UTF-8 CSV with required `company_name` and optional `location`/`website` columns. The exact CSV contract is in `docs/COMPANY_INPUT_SCHEMA.md`. |
+| Discovery/enrichment | Queries Wikidata entities classified within the petroleum-industry hierarchy and reads their `official website` property. It normalizes website origins and preserves the Wikidata entity URL as provenance. |
+| Output | Shows company name, website, location, and `Wikidata (official website)` in the in-memory Qt table. The importer exports a run's canonical company records and checkpoint states as CSV. When the source is unavailable, the GUI reports that failure instead of displaying sample data. |
 | Storage | The importer creates a local SQLite database (default `data/company_runs.sqlite3`) with import runs, canonical companies, per-run checkpoints, and invalid-row diagnostics. The database and CSV exports remain ignored generated output. |
 
 ## Run locally
@@ -92,8 +99,9 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The current public-search source needs no API key. If it cannot find a credible
-result, the application reports that outcome rather than substituting demo data.
+The current Wikidata source needs no API key. Click **Start Search** to run the
+bounded structured query. If the source is unavailable, the application reports
+that outcome rather than substituting demo data.
 
 Validate the documentation contract with:
 
@@ -121,15 +129,22 @@ python scripts/import_companies.py status RUN_ID
 python scripts/import_companies.py export RUN_ID exports/companies.csv
 ```
 
+For a non-technical Windows user, trigger the **Build Windows app** GitHub
+Actions workflow, download its `OilDomainFinder-Windows` artifact, unzip it,
+and open `OilDomainFinder.exe`. Python and API keys are not required on that
+Windows computer.
+
 ## Current limitations and free-source constraints
 
-- General-search HTML is an unstable, unofficial integration surface. Markup,
-  access controls, CAPTCHAs, throttling, robots policies, or terms can change
-  or block it without notice. The code has no explicit rate limiter,
-  retry/backoff policy, source-specific concurrency cap, or provenance field.
-- The public search source is intentionally tiny (four queries and up to eight
-  results per query) and cannot enumerate a supplied company list or reliably
-  prove that a result is an official website.
+- Wikidata is community-maintained, so it has incomplete coverage and can
+  contain stale or incorrect official-website statements. The source reports
+  Wikidata provenance but does not independently validate ownership, redirects,
+  DNS, or TLS.
+- Wikidata Query Service is public and intentionally constrained. Its current
+  documented endpoint has a 60-second query timeout and per-client processing
+  limits; it is appropriate for the app's one bounded interactive query, not
+  for a 500,000-row bulk resolver. Respect its changing service limits and
+  User-Agent policy.
 - The product does not validate DNS, redirects, TLS, ownership, or company-to-
   domain matches. It can emit false positives and blank websites.
 - The GUI search remains a small, one-worker interactive flow; it does not yet
@@ -178,27 +193,24 @@ those services explicitly permit.
 
 ## Known bugs, risks, and next priorities
 
-1. HTML parsers and Bing redirect decoding are brittle against upstream
-   changes. Query-result title parsing is not authoritative company identity
-   resolution. A live verification on 2026-07-12 found that Bing initially
-   returned unrelated educational pages; the source now rejects them, but may
-   correctly return no results until a more suitable permitted source exists.
-2. The relevance rules are intentionally conservative and can reject legitimate
-   companies whose search-result title lacks the configured industry or
-   company-like terms.
+1. The Wikidata query covers only entities that contributors have classified in
+   the petroleum-industry hierarchy and supplied with an official website. It
+   is a high-confidence seed source, not a complete global company directory.
+2. The live query returns at most 250 rows per click and does not yet support
+   user filters, cached snapshots, pagination, or freshness timestamps.
 3. There is no test coverage yet for engine error aggregation, network retries,
-   deduplication, or GUI thread behavior.
+   GUI thread behavior, or the Windows packaging workflow.
 4. The local importer does not yet have a permitted no-key resolver that can
    process its `pending_discovery` checkpoints. It is intentionally offline;
-   adding bulk general-search scraping would violate the project's responsible
-   source strategy.
+   integrating a bulk resolver requires separately verifying its data license,
+   rate limits, and permissible use.
 5. Users cannot yet choose sources or query parameters, import a company file
    through the GUI, or view prior SQLite runs in the desktop application.
 
-Recommended next implementation priority: select one permitted, reproducible,
-no-key company dataset and use the implemented CSV/SQLite import path for a
-small pilot. Then add one compliant resolver for pending checkpoints, with
-explicit source terms, rate limits, retries, and evidence capture; defer
+Recommended next implementation priority: add a simple GUI export button and
+cache the latest successful Wikidata result set locally, so a non-technical
+user can save results without using the command line. In parallel, evaluate a
+separately licensed bulk company dataset for the importer; defer
 500,000-company execution until its measured rate limits and data terms support
 it.
 
@@ -225,3 +237,7 @@ it.
   deduplication, per-run checkpoints, bounded commits, invalid-row diagnostics,
   documented input schema, and regression coverage. It makes no network
   requests and requires no API key.
+- Replaced fragile general-search scraping with a bounded structured Wikidata
+  official-website query. Added offline fixtures/tests, live end-to-end
+  verification, and a Windows executable build workflow for non-technical
+  users.
