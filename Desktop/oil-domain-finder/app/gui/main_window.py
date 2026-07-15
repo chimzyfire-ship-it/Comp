@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QComboBox,
     QProgressBar,
     QPushButton,
     QTableWidget,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 from app.gui.styles import APP_STYLESHEET
 from sources.base import SearchResult
 from sources.engine import SearchEngine
+from sources.categories import CATEGORIES
 
 
 class SearchWorker(QObject):
@@ -27,10 +29,14 @@ class SearchWorker(QObject):
     finished = Signal(list)
     failed = Signal(str)
 
+    def __init__(self, category_key: str) -> None:
+        super().__init__()
+        self.category_key = category_key
+
     @Slot()
     def run(self) -> None:
         try:
-            companies = SearchEngine().search(progress_callback=self.progress.emit)
+            companies = SearchEngine().search(self.category_key, progress_callback=self.progress.emit)
         except Exception as error:
             self.failed.emit(str(error) or "We couldn't complete the search. Please try again.")
         else:
@@ -42,7 +48,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Oil Domain Finder")
+        self.setWindowTitle("Company Domain Finder")
         self.resize(1100, 700)
         self.setMinimumSize(900, 600)
         self.setStyleSheet(APP_STYLESHEET)
@@ -58,9 +64,9 @@ class MainWindow(QMainWindow):
         page_layout.setContentsMargins(36, 30, 36, 34)
         page_layout.setSpacing(22)
 
-        title = QLabel("Oil Domain Finder")
+        title = QLabel("Company Domain Finder")
         title.setObjectName("titleLabel")
-        subtitle = QLabel("Find structured oil and gas company websites — no API key required.")
+        subtitle = QLabel("Find clean, official company domains worldwide — no API key required.")
         subtitle.setObjectName("subtitleLabel")
         page_layout.addWidget(title)
         page_layout.addWidget(subtitle)
@@ -72,7 +78,17 @@ class MainWindow(QMainWindow):
         controls_layout.setSpacing(16)
 
         controls_row = QHBoxLayout()
-        self.start_button = QPushButton("Start Search")
+        category_label = QLabel("Company category")
+        category_label.setObjectName("controlLabel")
+        controls_row.addWidget(category_label)
+        self.category_selector = QComboBox()
+        self.category_selector.setObjectName("categorySelector")
+        for category in CATEGORIES:
+            self.category_selector.addItem(category.label, category.key)
+        self.category_selector.setMinimumWidth(220)
+        self.category_selector.setMinimumHeight(48)
+        controls_row.addWidget(self.category_selector)
+        self.start_button = QPushButton("Search")
         self.start_button.setObjectName("startButton")
         self.start_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.start_button.setMinimumHeight(48)
@@ -107,11 +123,13 @@ class MainWindow(QMainWindow):
     def _start_search(self) -> None:
         """Start a live search without blocking the Qt event loop."""
         self.start_button.setEnabled(False)
-        self.status_label.setText("Searching...")
+        category_name = self.category_selector.currentText()
+        self.category_selector.setEnabled(False)
+        self.status_label.setText(f"Searching {category_name} companies worldwide...")
         self.progress_bar.setValue(0)
         self.results_table.setRowCount(0)
         self._search_thread = QThread(self)
-        self._search_worker = SearchWorker()
+        self._search_worker = SearchWorker(self.category_selector.currentData())
         self._search_worker.moveToThread(self._search_thread)
         self._search_thread.started.connect(self._search_worker.run)
         self._search_worker.progress.connect(self._update_search_progress)
@@ -131,15 +149,17 @@ class MainWindow(QMainWindow):
     def _search_finished(self, companies: list[SearchResult]) -> None:
         for company in companies:
             self._add_result(company)
-        self.status_label.setText("Search Complete")
+        self.status_label.setText(f"Search complete — {len(companies)} clean domains found")
         self.progress_bar.setValue(100)
         self.start_button.setEnabled(True)
+        self.category_selector.setEnabled(True)
 
     @Slot(str)
     def _search_failed(self, message: str) -> None:
         self.status_label.setText(message)
         self.progress_bar.setValue(0)
         self.start_button.setEnabled(True)
+        self.category_selector.setEnabled(True)
 
     @Slot()
     def _cleanup_search_thread(self) -> None:

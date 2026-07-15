@@ -15,7 +15,9 @@ class SearchEngineError(RuntimeError):
 class SearchEngine:
     """Run available sources, merge their results, and remove duplicates."""
 
-    def search(self, progress_callback: ProgressCallback | None = None) -> list[SearchResult]:
+    def search(
+        self, category_key: str, progress_callback: ProgressCallback | None = None
+    ) -> list[SearchResult]:
         """Search all available live sources and report an honest failure if none work."""
         self._report(progress_callback, "Searching...", 10)
         sources = [source for source in self._enabled_sources() if source.is_live]
@@ -26,7 +28,7 @@ class SearchEngine:
         failures: list[str] = []
         for index, source in enumerate(sources, start=1):
             try:
-                results.extend(source.search(progress_callback))
+                results.extend(source.search(category_key, progress_callback))
             except Exception as error:
                 failures.append(str(error) or source.__class__.__name__)
                 continue
@@ -52,10 +54,10 @@ class SearchEngine:
 
     @staticmethod
     def _merge_duplicates(results: list[SearchResult]) -> list[SearchResult]:
-        """Merge duplicate company names and locations, retaining useful fields."""
-        merged: dict[tuple[str, str], SearchResult] = {}
+        """Keep one clean row per official website domain."""
+        merged: dict[str, SearchResult] = {}
         for result in results:
-            key = (result.company_name.casefold(), result.location.casefold())
+            key = result.website.casefold()
             existing = merged.get(key)
             if existing is None:
                 merged[key] = result

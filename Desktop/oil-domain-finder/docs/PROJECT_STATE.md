@@ -1,11 +1,12 @@
-# Project State: Oil Domain Finder
+# Project State: Company Domain Finder
 
-Last verified: 2026-07-12
+Last verified: 2026-07-14
 
 ## Product goal and intended users
 
-Oil Domain Finder is an early desktop MVP for finding publicly available
-websites for oil and gas companies. Its intended users are researchers,
+Company Domain Finder is an early desktop MVP for finding publicly available
+official website domains for companies in six categories: Oil & Gas, Renewable
+Energy, Technology, Financial Services, Healthcare, and Manufacturing. Its intended users are researchers,
 business-development teams, and other operators who need a starting list of
 company websites and domains without relying on paid enrichment APIs.
 
@@ -31,13 +32,13 @@ companies is not implemented.
 - The search worker runs in a Qt `QThread`, keeping the GUI event loop
   responsive while a search runs.
 - The primary live source is Wikidata Query Service, using its structured
-  `official website` property (`P856`) and petroleum-industry hierarchy
-  (`Q862571`), with a descriptive User-Agent and one bounded query per search.
+  `official website` property (`P856`) and the selected industry hierarchy,
+  with a descriptive User-Agent and one bounded worldwide query per search.
 
 ## Implemented functionality
 
-- Desktop window with a Start Search button, progress indicator, status text,
-  and result table: `app/gui/main_window.py`.
+- Desktop window with a six-category selector, Search button, progress
+  indicator, status text, and result table: `app/gui/main_window.py`.
 - Central Qt stylesheet: `app/gui/styles.py`.
 - Source-neutral result model and provider interface:
   `sources/base.py`.
@@ -45,13 +46,13 @@ companies is not implemented.
   `sources/engine.py`. Duplicate companies are currently keyed by normalized
   company name plus location; provider-level web results are keyed by name plus
   website.
-- Built-in demo fallback with ten well-known companies:
-  `sources/demo_source.py`.
 - Structured no-key discovery source: `sources/wikidata_source.py`. It issues
-  one bounded Wikidata SPARQL query for petroleum-industry entities that have
-  an official website, normalizes the website origin, deduplicates records, and
-  retains Wikidata entity provenance. A live end-to-end check on 2026-07-12
-  returned 210 records.
+  one bounded Wikidata SPARQL query (up to 1,000 records) for the selected industry hierarchy and
+  entities with an official website, normalizes the website origin, removes
+  duplicate domains, and retains Wikidata entity provenance. A live check on
+  2026-07-14 returned non-empty clean results for every category (Oil & Gas
+  233, Renewable Energy 166, Technology 223, Financial Services 236,
+  Healthcare 212, Manufacturing 222).
 - The token-gated OpenCorporates integration, sample-data source, and fragile
   Bing/DuckDuckGo HTML scraper were removed to uphold the no-API-key constraint
   and prevent misleading or unstructured results from being presented as
@@ -69,9 +70,10 @@ companies is not implemented.
   a prior run without any network request.
 - CSV schema documentation and import regression tests:
   `docs/COMPANY_INPUT_SCHEMA.md` and `tests/test_company_import.py`.
-- Windows packaging support: `scripts/build_windows.bat` and
-  `.github/workflows/build-windows.yml`. The GitHub workflow produces a
-  downloadable `OilDomainFinder-Windows` artifact containing the executable.
+- Windows packaging support: `scripts/build_windows.bat`,
+  `installer/CompanyDomainFinder.iss`, and `.github/workflows/build-windows.yml`.
+  The GitHub workflow produces one `CompanyDomainFinder-Setup.exe` installer;
+  Windows users need neither Python nor a terminal.
 - Startup entry point: `main.py`.
 
 Placeholder package directories exist for future database, exporter, scraper,
@@ -81,9 +83,9 @@ source, and utility work under `app/`; no implementations were found there.
 
 | Stage | Current behavior |
 | --- | --- |
-| Inputs | One fixed, structured Wikidata query, or a UTF-8 CSV with required `company_name` and optional `location`/`website` columns. The exact CSV contract is in `docs/COMPANY_INPUT_SCHEMA.md`. |
-| Discovery/enrichment | Queries Wikidata entities classified within the petroleum-industry hierarchy and reads their `official website` property. It normalizes website origins and preserves the Wikidata entity URL as provenance. |
-| Output | Shows company name, website, location, and `Wikidata (official website)` in the in-memory Qt table. The importer exports a run's canonical company records and checkpoint states as CSV. When the source is unavailable, the GUI reports that failure instead of displaying sample data. |
+| Inputs | A selected category (Oil & Gas, Renewable Energy, Technology, Financial Services, Healthcare, or Manufacturing), or a UTF-8 CSV with required `company_name` and optional `location`/`website` columns. The exact CSV contract is in `docs/COMPANY_INPUT_SCHEMA.md`. |
+| Discovery/enrichment | Queries Wikidata entities classified within the selected industry hierarchy and reads their `official website` property. It normalizes website origins, removes duplicate domains, and preserves the Wikidata entity URL as provenance. |
+| Output | Shows company name, website, location, and `Wikidata (official website)` in the in-memory Qt table, with one row per domain. The importer exports a run's canonical company records and checkpoint states as CSV. When the source is unavailable, the GUI reports that failure instead of displaying sample data. |
 | Storage | The importer creates a local SQLite database (default `data/company_runs.sqlite3`) with import runs, canonical companies, per-run checkpoints, and invalid-row diagnostics. The database and CSV exports remain ignored generated output. |
 
 ## Run locally
@@ -99,9 +101,10 @@ pip install -r requirements.txt
 python main.py
 ```
 
-The current Wikidata source needs no API key. Click **Start Search** to run the
-bounded structured query. If the source is unavailable, the application reports
-that outcome rather than substituting demo data.
+The current Wikidata source needs no API key. Choose a category and click
+**Search** to run the bounded structured worldwide query. If the source is
+unavailable, the application reports that outcome rather than substituting demo
+data.
 
 Validate the documentation contract with:
 
@@ -130,9 +133,10 @@ python scripts/import_companies.py export RUN_ID exports/companies.csv
 ```
 
 For a non-technical Windows user, trigger the **Build Windows app** GitHub
-Actions workflow, download its `OilDomainFinder-Windows` artifact, unzip it,
-and open `OilDomainFinder.exe`. Python and API keys are not required on that
-Windows computer.
+Actions workflow and download its single `CompanyDomainFinder-Setup.exe`
+artifact. They double-click it and open the installed app from the Start menu.
+Python, an API key, and command-line setup are not required on that Windows
+computer.
 
 ## Current limitations and free-source constraints
 
@@ -151,8 +155,10 @@ Windows computer.
   use the local importer, accept a company file, or persist live-search
   findings. The importer itself stores only supplied websites and pending
   discovery checkpoints; it does not prove ownership or discover new domains.
-- There are no automated tests, lint/type-check configuration, CI workflow,
-  lockfile, container configuration, or application logging implementation.
+- There is focused regression coverage for CSV importing, category-query
+  construction, structured result parsing, and duplicate-domain cleanup. There
+  is no lint/type-check configuration, lockfile, container configuration, or
+  application logging implementation.
 
 ## Responsible 500,000-company strategy without paid APIs
 
@@ -193,10 +199,12 @@ those services explicitly permit.
 
 ## Known bugs, risks, and next priorities
 
-1. The Wikidata query covers only entities that contributors have classified in
-   the petroleum-industry hierarchy and supplied with an official website. It
-   is a high-confidence seed source, not a complete global company directory.
-2. The live query returns at most 250 rows per click and does not yet support
+1. Each category query covers only entities that contributors have classified
+   in the selected Wikidata industry hierarchy and supplied with an official
+   website. It is a high-confidence worldwide seed source, not a complete
+   global company directory.
+2. The live query returns at most 1,000 raw Wikidata records per category click;
+   protocol variants and exact duplicate domains are normalized into one row. It does not yet support
    user filters, cached snapshots, pagination, or freshness timestamps.
 3. There is no test coverage yet for engine error aggregation, network retries,
    GUI thread behavior, or the Windows packaging workflow.
@@ -204,7 +212,8 @@ those services explicitly permit.
    process its `pending_discovery` checkpoints. It is intentionally offline;
    integrating a bulk resolver requires separately verifying its data license,
    rate limits, and permissible use.
-5. Users cannot yet choose sources or query parameters, import a company file
+5. Users cannot yet choose sources or query parameters beyond the six supported
+   categories, import a company file
    through the GUI, or view prior SQLite runs in the desktop application.
 
 Recommended next implementation priority: add a simple GUI export button and
@@ -241,3 +250,23 @@ it.
   official-website query. Added offline fixtures/tests, live end-to-end
   verification, and a Windows executable build workflow for non-technical
   users.
+
+### 2026-07-14
+
+- Renamed the application to Company Domain Finder and added a category selector
+  for Oil & Gas, Renewable Energy, Technology, Financial Services, Healthcare,
+  and Manufacturing.
+- Made the structured Wikidata query category-aware and changed live result
+  cleanup to retain one row per normalized official website domain.
+- Added automated coverage for all six category query configurations and clean
+  domain deduplication.
+- Added an Inno Setup definition and Windows workflow step that produce one
+  double-click installer (`CompanyDomainFinder-Setup.exe`) instead of requiring
+  an unpacked application folder.
+
+### 2026-07-15
+
+- Raised the single-search Wikidata limit from 250 to 1,000 records after live
+  verification showed the Oil & Gas category returning 946 clean domains at
+  the higher limit. Domain normalization now also merges HTTP and HTTPS
+  variants of the same host into one HTTPS result row.

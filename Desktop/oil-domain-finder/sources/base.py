@@ -36,5 +36,7 @@ class BaseSource(ABC):
         return True
 
     @abstractmethod
-    def search(self, progress_callback: ProgressCallback | None = None) -> list[SearchResult]:
+    def search(
+        self, category_key: str, progress_callback: ProgressCallback | None = None
+    ) -> list[SearchResult]:
         """Return company results from this source."""

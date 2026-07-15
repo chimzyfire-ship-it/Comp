@@ -1,4 +1,4 @@
-"""Application entry point for Oil Domain Finder."""
+"""Application entry point for Company Domain Finder."""
 
 import sys
 
@@ -9,7 +9,7 @@ from app.gui.main_window import MainWindow
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("Oil Domain Finder")
+    app.setApplicationName("Company Domain Finder")
     window = MainWindow()
     window.show()
     return app.exec()

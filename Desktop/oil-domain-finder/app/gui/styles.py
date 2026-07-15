@@ -38,6 +38,17 @@ QPushButton#startButton:hover {
 QPushButton#startButton:pressed {
     background: #0A463D;
 }
+QComboBox#categorySelector {
+    background: white;
+    border: 1px solid #CBD5E1;
+    border-radius: 9px;
+    padding: 0 12px;
+    font-size: 15px;
+}
+QLabel#controlLabel {
+    color: #526174;
+    font-weight: 600;
+}
 QProgressBar {
     background: #E9EEF4;
     border: none;

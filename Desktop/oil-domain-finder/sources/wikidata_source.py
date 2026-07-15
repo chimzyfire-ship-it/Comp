@@ -1,4 +1,4 @@
-"""No-key, structured oil-and-gas company websites from Wikidata."""
+"""No-key, structured company-domain discovery from Wikidata."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from sources.base import BaseSource, ProgressCallback, SearchResult
+from sources.categories import CompanyCategory, get_category
 
 
 WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql"
-PETROLEUM_INDUSTRY_QID = "Q862571"
 SOURCE_NAME = "Wikidata (official website)"
-USER_AGENT = "OilDomainFinder/0.1 (https://github.com/chimzyfire-ship-it/Comp)"
+USER_AGENT = "CompanyDomainFinder/1.0 (https://github.com/chimzyfire-ship-it/Comp)"
 
 
 class WikidataUnavailableError(RuntimeError):
@@ -22,30 +22,35 @@ class WikidataUnavailableError(RuntimeError):
 
 
 class WikidataSource(BaseSource):
-    """Retrieve oil-and-gas entities with Wikidata's official-website property."""
+    """Retrieve category companies with Wikidata's official-website property."""
 
     is_live = True
-    timeout = 30.0
-    max_results = 250
+    # A thousand records materially improves category coverage while keeping a
+    # single interactive query within the public service's practical limits.
+    timeout = 60.0
+    max_results = 1_000
 
-    def search(self, progress_callback: ProgressCallback | None = None) -> list[SearchResult]:
+    def search(
+        self, category_key: str, progress_callback: ProgressCallback | None = None
+    ) -> list[SearchResult]:
         """Return structured company websites from one bounded public query."""
-        self._report(progress_callback, "Getting verified company websites...", 20)
-        payload = self._download(self._query())
+        category = get_category(category_key)
+        self._report(progress_callback, f"Finding {category.label} company websites worldwide...", 20)
+        payload = self._download(self._query(category))
         self._report(progress_callback, "Validating company records...", 70)
         results = self._parse_results(payload)
         if not results:
-            raise WikidataUnavailableError("Wikidata returned no oil-and-gas company websites.")
-        self._report(progress_callback, f"Found {len(results)} company websites", 90)
+            raise WikidataUnavailableError(f"Wikidata returned no {category.label} company websites.")
+        self._report(progress_callback, f"Found {len(results)} clean company domains", 90)
         return results
 
-    def _query(self) -> str:
-        """Build a bounded query for entities in the petroleum-industry hierarchy."""
+    def _query(self, category: CompanyCategory) -> str:
+        """Build a bounded worldwide query for one industry hierarchy."""
         return f"""
             SELECT DISTINCT ?company ?companyLabel ?website ?countryLabel WHERE {{
               ?company wdt:P452 ?industry;
                        wdt:P856 ?website.
-              ?industry wdt:P279* wd:{PETROLEUM_INDUSTRY_QID}.
+              ?industry wdt:P279* wd:{category.wikidata_qid}.
               OPTIONAL {{ ?company wdt:P17 ?country. }}
               SERVICE wikibase:label {{ bd:serviceParam wikibase:language \"en\". }}
             }}
@@ -75,7 +80,7 @@ class WikidataSource(BaseSource):
         if not isinstance(bindings, list):
             raise WikidataUnavailableError("Wikidata returned an unreadable response.")
 
-        unique: dict[tuple[str, str], SearchResult] = {}
+        unique: dict[str, SearchResult] = {}
         for binding in bindings:
             if not isinstance(binding, dict):
                 continue
@@ -86,8 +91,8 @@ class WikidataSource(BaseSource):
             if not company_name or not website:
                 continue
             result = SearchResult(company_name, website, location, SOURCE_NAME, item_url)
-            unique.setdefault((company_name.casefold(), website.casefold()), result)
-        return list(unique.values())
+            unique.setdefault(website.casefold(), result)
+        return sorted(unique.values(), key=lambda result: (result.company_name.casefold(), result.website))
 
     @staticmethod
     def _report(callback: ProgressCallback | None, message: str, progress: int) -> None:
@@ -102,6 +107,14 @@ def _binding_value(binding: dict[str, Any], key: str) -> str:
 
 def _website_origin(value: str) -> str:
     parsed = urlparse(value)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    hostname = (parsed.hostname or "").casefold().rstrip(".")
+    if parsed.scheme not in {"http", "https"} or not hostname:
         return ""
-    return f"{parsed.scheme}://{parsed.netloc.casefold()}"
+    # A domain is the useful output here, not a protocol variant. Normalizing
+    # both HTTP and HTTPS to one HTTPS domain prevents repeated result rows.
+    try:
+        port = parsed.port
+    except ValueError:
+        return ""
+    port_suffix = f":{port}" if port and port not in {80, 443} else ""
+    return f"https://{hostname}{port_suffix}"
