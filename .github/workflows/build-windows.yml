@@ -1,0 +1,32 @@
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+defaults:
+  run:
+    working-directory: Desktop/oil-domain-finder
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build dependencies
+        run: python -m pip install -r requirements.txt pyinstaller
+      - name: Build executable
+        run: pyinstaller --noconfirm --windowed --collect-submodules sources --name CompanyDomainFinder main.py
+      - name: Install installer builder
+        run: choco install innosetup --no-progress --yes
+      - name: Build one-click installer
+        run: iscc installer\CompanyDomainFinder.iss
+      - name: Upload one-click installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: CompanyDomainFinder-Windows-Installer
+          path: Desktop/oil-domain-finder/dist-installer/CompanyDomainFinder-Setup.exe
