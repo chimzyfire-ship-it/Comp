@@ -1,1 +1,1 @@
-"""Oil Domain Finder application package."""
+"""Company Domain Finder application package."""

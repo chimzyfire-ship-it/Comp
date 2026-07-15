@@ -16,9 +16,13 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install -r requirements.txt pyinstaller
       - name: Build executable
-        run: pyinstaller --noconfirm --windowed --name OilDomainFinder main.py
-      - name: Upload Windows app
+        run: pyinstaller --noconfirm --windowed --collect-submodules sources --name CompanyDomainFinder main.py
+      - name: Install installer builder
+        run: choco install innosetup --no-progress --yes
+      - name: Build one-click installer
+        run: iscc installer\CompanyDomainFinder.iss
+      - name: Upload one-click installer
         uses: actions/upload-artifact@v4
         with:
-          name: OilDomainFinder-Windows
-          path: dist/OilDomainFinder
+          name: CompanyDomainFinder-Windows-Installer
+          path: dist-installer/CompanyDomainFinder-Setup.exe
